@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WANPTEK Power Supply Control</title>
+    <link rel="stylesheet" href="/css">
+</head>
+<body>
+    <!-- Organization branding displayed in top-right corner -->
+    <div class="brand-identity">light &amp; matter group</div>
+    
+    <!-- Interactive color spectrum bar at bottom of page -->
+    <div class="spectrum-bar">
+        <div class="spectrum-segment" style="background-color: #800000;"></div>
+        <div class="spectrum-segment" style="background-color: #FF0000;"></div>
+        <div class="spectrum-segment" style="background-color: #808000;"></div>
+        <div class="spectrum-segment" style="background-color: #FFFF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008000;"></div>
+        <div class="spectrum-segment" style="background-color: #00FF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008080;"></div>
+        <div class="spectrum-segment" style="background-color: #00FFFF;"></div>
+        <div class="spectrum-segment" style="background-color: #000080;"></div>
+        <div class="spectrum-segment" style="background-color: #0000FF;"></div>
+        <div class="spectrum-segment" style="background-color: #800080;"></div>
+        <div class="spectrum-segment" style="background-color: #FF00FF;"></div>
+    </div>
+
+    <!-- Main content container with glassmorphism styling -->
+    <div class="main-container">
+
+        <div class="page-header">
+            <h1>🔌 WANPTEK Power Supply</h1>
+            <p>Web Interface & SCPI Control</p>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="led" id="connection-led"></div>
+                <span id="connection-status">Connecting...</span>
+            </div>
+            <div id="device-info">Device Info Loading...</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="content-card">
+                <div class="card-header" style="margin-bottom: 0px;">
+                    <div class="primary-info">⚙️ Control Panel</div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="voltage-input">Voltage (V)</label>
+                    <input type="number" id="voltage-input" step="0.01" min="0" placeholder="Loading...">
+                </div>
+                
+                <div class="control-group">
+                    <label for="current-input">Current (A)</label>
+                    <input type="number" id="current-input" step="0.001" min="0" placeholder="Loading...">
+                </div>
+                
+                <div class="button-group">
+                    <button class="button-blue" onclick="setOutput()">Set Values</button>
+                </div>
+                
+                <div class="button-group">
+                    <button class="button-red" id="power-btn" onclick="togglePower()">Power ON</button>
+                    <button class="button-yellow" onclick="toggleOCP()">Toggle OCP</button>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <div class="card-header" style="margin-bottom: 0px;">
+                    <div class="primary-info">📊 Measurements</div>
+                </div>
+                
+                <div class="measurement-display">
+                    <div class="measurement-item">
+                        <div class="measurement-value" id="voltage-reading">0.00</div>
+                        <div class="measurement-unit">Volts</div>
+                    </div>
+                    <div class="measurement-item">
+                        <div class="measurement-value" id="current-reading">0.000</div>
+                        <div class="measurement-unit">Amps</div>
+                    </div>
+                    <div class="measurement-item">
+                        <div class="measurement-value" id="power-reading">0.00</div>
+                        <div class="measurement-unit">Watts</div>
+                    </div>
+                </div>
+                
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span>Output:</span>
+                        <span class="status-value" id="output-status">OFF</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Mode:</span>
+                        <span class="status-value" id="mode-status">CV</span>
+                    </div>
+                    <div class="status-item">
+                        <span>OCP:</span>
+                        <span class="status-value" id="ocp-status">Enabled</span>
+                    </div>
+                    <div class="status-item">
+                        <span>Alarm:</span>
+                        <span class="status-value" id="alarm-status">None</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- SCPI server information and help card -->
+        <div class="content-card bottom-section">
+            <div class="card-header" style="margin-bottom: 0px;">
+                <!-- SCPI server information header -->
+                <div class="primary-info">📡 SCPI Server</div>
+                <!-- Orange help button linking to documentation -->
+                <button class="button-orange" onclick="location.href='/help'">Help</button>
+            </div>
+            <!-- SCPI connection instructions -->
+            <div style="color:#FFFFFF">
+                Connect via telnet to <code>{{ ipa }}:5025</code> for computer (e.g. Python) control
+            </div>
+        </div>
+        
+        <!-- Footer with copyright and system information -->
+        <div class="page-header">
+            <p>
+                <!-- Copyleft symbol (rotated copyright) -->
+                <span class="copyleft">&copy;</span> 2025 Ilja Gerhardt |
+                IP-Address: {{ ipa }} |
+                MAC-Address: {{ mac }} |
+                Last Update: <span id="last-update">Never</span>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let currentStatus = {};
+        let updateInterval = null;
+        let consecutiveErrors = 0;
+        const MAX_CONSECUTIVE_ERRORS = 3;
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+        
+        function initializeApp() {
+            // Load initial status
+            updateStatus();
+            
+            // Start fast polling (300ms for snappy response)
+            startPolling();
+            
+            // Set up event listeners for Enter key
+            document.getElementById('voltage-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    setOutput();
+                }
+            });
+            
+            document.getElementById('current-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    setOutput();
+                }
+            });
+        }
+        
+        function startPolling() {
+            // Clear any existing interval
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+            
+            // Poll every 300ms for fast, responsive updates
+            updateInterval = setInterval(updateStatus, 300);
+        }
+        
+        function updateStatus() {
+            fetch('/api/status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        consecutiveErrors = 0;
+                        currentStatus = data.status;
+                        updateDisplay(data.status);
+                        updateDeviceInfo(data.device_info);
+                        updateConnectionStatus(true, 'Connected');
+                    } else {
+                        handleError(data.error || 'Unknown error');
+                    }
+                })
+                .catch(error => {
+                    handleError(error.message);
+                });
+        }
+        
+        function handleError(errorMessage) {
+            consecutiveErrors++;
+            console.error('Status update error:', errorMessage);
+            
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                updateConnectionStatus(false, 'Connection issue');
+            } else {
+                // Don't immediately show as disconnected for temporary glitches
+                updateConnectionStatus(true, 'Reconnecting...');
+            }
+        }
+        
+        function updateDisplay(status) {
+            // Update measurements
+            document.getElementById('voltage-reading').textContent = status.real_voltage.toFixed(2);
+            document.getElementById('current-reading').textContent = status.real_current.toFixed(3);
+            document.getElementById('power-reading').textContent = status.real_power.toFixed(2);
+            
+            // Pre-populate input fields with current set values
+            const voltageInput = document.getElementById('voltage-input');
+            const currentInput = document.getElementById('current-input');
+            
+            // Only update if not currently focused (don't interrupt user typing)
+            if (document.activeElement !== voltageInput) {
+                voltageInput.value = status.set_voltage.toFixed(2);
+            }
+            if (document.activeElement !== currentInput) {
+                currentInput.value = status.set_current.toFixed(3);
+            }
+            
+            // Always update placeholders
+            voltageInput.placeholder = status.set_voltage.toFixed(2);
+            currentInput.placeholder = status.set_current.toFixed(3);
+            
+            // Update status indicators
+            const outputStatus = document.getElementById('output-status');
+            if (status.power_on) {
+                outputStatus.textContent = 'ON';
+                outputStatus.className = 'status-value on';
+            } else {
+                outputStatus.textContent = 'OFF';
+                outputStatus.className = 'status-value off';
+            }
+            
+            const modeStatus = document.getElementById('mode-status');
+            modeStatus.textContent = status.constant_current_mode ? 'CC' : 'CV';
+            
+            const ocpStatus = document.getElementById('ocp-status');
+            ocpStatus.textContent = status.ocp_enabled ? 'Enabled' : 'Disabled';
+            ocpStatus.className = status.ocp_enabled ? 'status-value on' : 'status-value off';
+            
+            const alarmStatus = document.getElementById('alarm-status');
+            alarmStatus.textContent = status.alarm_active ? 'ACTIVE' : 'None';
+            alarmStatus.className = status.alarm_active ? 'status-value off' : 'status-value on';
+            
+            // Update power button
+            const powerBtn = document.getElementById('power-btn');
+            if (status.power_on) {
+                powerBtn.textContent = 'Power OFF';
+                powerBtn.className = 'button-red';
+            } else {
+                powerBtn.textContent = 'Power ON';
+                powerBtn.className = 'button-green';
+            }
+            
+            // Update timestamp
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+        
+        function updateDeviceInfo(deviceInfo) {
+            if (deviceInfo) {
+                document.getElementById('device-info').textContent = 
+                    `${deviceInfo.model} @ ${deviceInfo.port} (${deviceInfo.baudrate} baud)`;
+            }
+        }
+        
+        function updateConnectionStatus(connected, message) {
+            const led = document.getElementById('connection-led');
+            const status = document.getElementById('connection-status');
+            
+            if (connected) {
+                led.className = 'led on';
+                status.textContent = message || 'Connected';
+            } else {
+                led.className = 'led';
+                status.textContent = message || 'Disconnected';
+            }
+        }
+        
+        function setOutput() {
+            const voltageValue = document.getElementById('voltage-input').value;
+            const currentValue = document.getElementById('current-input').value;
+            
+            // Build data object with values
+            const data = {};
+            
+            // Use entered values or fall back to current status
+            if (voltageValue !== '') {
+                data.voltage = parseFloat(voltageValue);
+            } else if (currentStatus.set_voltage !== undefined) {
+                data.voltage = currentStatus.set_voltage;
+            }
+            
+            if (currentValue !== '') {
+                data.current = parseFloat(currentValue);
+            } else if (currentStatus.set_current !== undefined) {
+                data.current = currentStatus.set_current;
+            }
+            
+            fetch('/api/set_output', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentStatus = data.status;
+                    updateDisplay(data.status);
+                    // Immediately update to show new values
+                    updateStatus();
+                } else {
+                    alert('Error setting output: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error setting output:', error);
+                alert('Network error setting output');
+            });
+        }
+        
+        function togglePower() {
+            const isOn = currentStatus.power_on;
+            const action = isOn ? 'off' : 'on';
+            
+            fetch(`/api/power/${action}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentStatus = data.status;
+                        updateDisplay(data.status);
+                        // Immediately update
+                        updateStatus();
+                    } else {
+                        alert('Error toggling power: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling power:', error);
+                    alert('Network error toggling power');
+                });
+        }
+        
+        function toggleOCP() {
+            const currentOCP = currentStatus.ocp_enabled;
+            
+            fetch('/api/set_output', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ocp_enable: !currentOCP
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentStatus = data.status;
+                    updateDisplay(data.status);
+                    // Immediately update
+                    updateStatus();
+                } else {
+                    alert('Error toggling OCP: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error toggling OCP:', error);
+                alert('Network error toggling OCP');
+            });
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

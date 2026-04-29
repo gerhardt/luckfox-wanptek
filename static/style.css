@@ -1,0 +1,752 @@
+/* ========================================
+   WANPTEK Power Supply Web Interface Styles
+   Author: Ilja Gerhardt
+   Year: 2025
+   Description: Modern glassmorphism design with cyberpunk aesthetics
+======================================== */
+
+/* ========================================
+   1. GLOBAL RESET & BASE STYLES
+======================================== */
+
+/* Reset default browser margins and paddings */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Body base styling with cyberpunk color scheme */
+body {
+    font-family: 'Calibri', 'Inter', 'Orbitron', 'Gill Sans MT', sans-serif;
+    background-color: #000080; /* Deep blue background */
+    color: #00FFFF; /* Cyan text */
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    padding-bottom: 20px; /* Space for bottom spectrum bar */
+}
+
+/* ========================================
+   2. ANIMATED BACKGROUND GRID
+======================================== */
+
+/* Moving grid pattern creates dynamic background effect */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image:
+        linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px);
+    background-size: 50px 50px;
+    animation: gridMove 30s linear infinite;
+    z-index: -1; /* Behind all content */
+}
+
+/* Grid animation: moves continuously for dynamic effect */
+@keyframes gridMove {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(50px, 50px); }
+}
+
+/* ========================================
+   3. BRANDING & IDENTITY
+======================================== */
+
+/* Organization branding in top-right corner */
+.brand-identity {
+    position: fixed;
+    top: 20px;
+    right: 30px;
+    font-family: 'Gill Sans MT', sans-serif;
+    font-size: 27px;
+    font-weight: normal;
+    color: #00FFFF;
+    text-shadow: 0 0 10px #00FFFF; /* Glowing effect */
+    z-index: 1000;
+    letter-spacing: 2px;
+}
+
+/* Mobile responsive branding */
+@media (max-width: 768px) {
+    .brand-identity {
+        font-size: 21px;
+        right: 15px;
+        top: 15px;
+    }
+}
+
+/* Copyleft symbol (rotated copyright) for footer */
+.copyleft {
+    display: inline-block;
+    transform: rotate(180deg);
+}
+
+/* ========================================
+   4. MAIN CONTAINER & LAYOUT
+======================================== */
+
+/* Primary content container with glassmorphism effect */
+.main-container {
+    max-width: 1250px;
+    margin: 64px auto 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.7); /* Semi-transparent black */
+    backdrop-filter: blur(15px); /* Frosted glass effect */
+    border-radius: 20px;
+    border: 2px solid #9966CC; /* Purple border */
+    box-shadow: 
+        0 0 30px rgba(153, 102, 204, 0.3),
+        inset 0 0 30px rgba(153, 102, 204, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+/* ========================================
+   5. PAGE HEADER
+======================================== */
+
+/* Main page header with gradient background */
+.page-header {
+    background: linear-gradient(45deg, rgba(5, 3, 93, 0.8), rgba(53, 10, 66, 0.8));
+    color: white;
+    padding: 10px;
+    text-align: center;
+    position: relative;
+    backdrop-filter: blur(10px);
+}
+
+/* Primary heading with glow effect */
+.page-header h1 {
+    text-align: center;
+    font-size: 3em;
+    margin-bottom: 10px;
+    font-weight: 900;
+    color: #00FFFF;
+    text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+}
+
+/* ========================================
+   6. STATUS BAR
+======================================== */
+
+/* Status bar showing device info and connection state */
+.status-bar {
+    background: rgba(52, 152, 219, 0.3);
+    color: white;
+    padding: 10px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Status indicator with LED */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* LED indicator (default: red/disconnected) */
+.led {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e74c3c; /* Red */
+    box-shadow: 0 0 15px rgba(231, 76, 60, 0.8);
+    animation: pulse-red 2s infinite;
+}
+
+/* LED indicator when connected (green) */
+.led.on {
+    background: #2ecc71; /* Green */
+    box-shadow: 0 0 15px rgba(46, 204, 113, 0.8);
+    animation: pulse-green 2s infinite;
+}
+
+/* Pulsing animation for disconnected LED */
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Pulsing animation for connected LED */
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* ========================================
+   7. MAIN CONTENT GRID
+======================================== */
+
+/* Two-column grid layout for control and measurement panels */
+.main-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px; /* Consistent spacing between panels */
+    padding: 20px 30px; /* Consistent margins */
+}
+
+/* Mobile: stack columns vertically */
+@media (max-width: 768px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ========================================
+   8. CONTENT CARDS
+======================================== */
+
+/* Individual content cards with glassmorphism and hover effects */
+.content-card {
+    background: linear-gradient(135deg, rgba(0, 0, 128, 0.3), rgba(0, 0, 0, 0.5));
+    margin: 0; /* No margin - spacing handled by grid gap */
+    padding: 25px;
+    border-radius: 20px;
+    border: 1px solid rgba(153, 102, 204, 0.4);
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.5),
+        0 0 20px rgba(153, 102, 204, 0.15);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Animated shimmer effect on cards */
+.content-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(153, 102, 204, 0.2), transparent);
+    transition: left 0.6s ease;
+}
+
+/* Trigger shimmer on hover */
+.content-card:hover::before {
+    left: 100%;
+}
+
+/* Card hover state: lift and enhance glow */
+.content-card:hover {
+    transform: translateY(-5px);
+    box-shadow:
+        0 15px 40px rgba(0, 0, 0, 0.7),
+        0 0 30px rgba(153, 102, 204, 0.3);
+}
+
+/* Bottom-margin cards (SCPI server card) */
+.content-card.bottom-section {
+    margin: 20px 30px;
+}
+
+/* ========================================
+   9. CARD HEADERS
+======================================== */
+
+/* Header section within each card */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+/* Primary information display in card headers */
+.primary-info {
+    font-size: 1.4em;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #00FFFF;
+    text-shadow: 0 0 10px #00FFFF;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+}
+
+/* ========================================
+   10. CONTROL PANEL ELEMENTS
+======================================== */
+
+/* Individual control group (label + input) */
+.control-group {
+    margin-bottom: 20px;
+}
+
+/* Control labels */
+.control-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+}
+
+/* Input fields with glassmorphism */
+.control-group input {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    font-size: 16px;
+    transition: all 0.3s;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    backdrop-filter: blur(5px);
+}
+
+/* Input focus state: blue glow */
+.control-group input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Placeholder text styling */
+.control-group input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* ========================================
+   11. MEASUREMENT DISPLAY
+======================================== */
+
+/* Grid layout for measurement items */
+.measurement-display {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+/* Mobile: single column */
+@media (max-width: 768px) {
+    .measurement-display {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual measurement card */
+.measurement-item {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+/* Large numeric value display */
+.measurement-value {
+    font-size: 2em;
+    font-weight: bold;
+    color: #ffffff;
+    margin-bottom: 5px;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+/* Unit label below value */
+.measurement-unit {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+/* ========================================
+   12. STATUS GRID
+======================================== */
+
+/* Grid layout for status indicators */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Mobile: single column */
+@media (max-width: 768px) {
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual status item */
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Status value (right side of status item) */
+.status-value {
+    font-weight: bold;
+    padding: 4px 12px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    font-size: 0.9em;
+}
+
+/* Status value: active/on state (green) */
+.status-value.on {
+    background: rgba(46, 204, 113, 0.3);
+    color: #2ecc71;
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.3);
+}
+
+/* Status value: inactive/off state (red) */
+.status-value.off {
+    background: rgba(231, 76, 60, 0.3);
+    color: #e74c3c;
+    box-shadow: 0 0 10px rgba(231, 76, 60, 0.3);
+}
+
+/* ========================================
+   13. BUTTONS - BASE STYLES
+======================================== */
+
+/* Base button styling with glassmorphism */
+button {
+    padding: 14px 28px;
+    margin: 5px;
+    border: none;
+    border-radius: 12px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    color: #FFFFFF;
+    text-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Shimmer effect overlay for buttons */
+button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.5s ease;
+}
+
+/* Trigger shimmer on hover */
+button:hover::before {
+    left: 100%;
+}
+
+/* Base button hover: lift and scale */
+button:hover {
+    transform: translateY(-3px) scale(1.02);
+}
+
+/* Button active state: press down */
+button:active {
+    transform: translateY(1px) scale(0.98);
+}
+
+/* ========================================
+   14. BUTTON GROUP LAYOUT
+======================================== */
+
+/* Horizontal button group container */
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* ========================================
+   15. BUTTON COLOR THEMES
+======================================== */
+
+/* Blue buttons: default/read actions (e.g., "Set Values") */
+.button-blue {
+    background: rgba(0, 150, 255, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4),
+        0 0 25px rgba(0, 150, 255, 0.4);
+    border: 1px solid rgba(0, 150, 255, 0.6);
+}
+
+.button-blue:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5),
+        0 0 35px rgba(0, 150, 255, 0.6);
+}
+
+/* Green buttons: ON/activate actions */
+.button-green {
+    background: rgba(0, 200, 150, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4), 
+        0 0 25px rgba(0, 200, 150, 0.4);
+    border: 1px solid rgba(0, 200, 150, 0.6);
+}
+
+.button-green:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5), 
+        0 0 35px rgba(0, 200, 150, 0.6);
+}
+
+/* Red buttons: OFF/deactivate actions */
+.button-red {
+    background: rgba(255, 80, 80, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4), 
+        0 0 25px rgba(255, 80, 80, 0.4);
+    border: 1px solid rgba(255, 80, 80, 0.6);
+}
+
+.button-red:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5), 
+        0 0 35px rgba(255, 80, 80, 0.6);
+}
+
+/* Yellow buttons: toggle/switch actions */
+.button-yellow {
+    background: rgba(255, 180, 60, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4), 
+        0 0 25px rgba(255, 180, 60, 0.4);
+    border: 1px solid rgba(255, 180, 60, 0.6);
+}
+
+.button-yellow:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5), 
+        0 0 35px rgba(255, 180, 60, 0.6);
+}
+
+/* Orange buttons: help/information actions (smaller padding) */
+.button-orange {
+    padding: 6px 13px;
+    background: rgba(255, 165, 0, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4), 
+        0 0 25px rgba(255, 165, 0, 0.4);
+    border: 1px solid rgba(255, 165, 0, 0.6);
+}
+
+.button-orange:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5), 
+        0 0 35px rgba(255, 165, 0, 0.6);
+}
+
+/* Purple buttons: setup/configuration actions */
+.button-purple {
+    background: rgba(150, 80, 200, 0.9);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4), 
+        0 0 25px rgba(150, 80, 200, 0.4);
+    border: 1px solid rgba(150, 80, 200, 0.6);
+}
+
+.button-purple:hover {
+    box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.5), 
+        0 0 35px rgba(150, 80, 200, 0.6);
+}
+
+/* ========================================
+   16. SPECTRUM BAR (BOTTOM)
+======================================== */
+
+/* Interactive color spectrum bar at page bottom */
+.spectrum-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 20px;
+    display: flex;
+    z-index: 1000;
+}
+
+/* Individual color segments within spectrum bar */
+.spectrum-segment {
+    flex: 1;
+    height: 100%;
+    transition: all 0.3s ease;
+}
+
+/* Hover effect: segment expands upward */
+.spectrum-segment:hover {
+    transform: scaleY(2);
+    box-shadow: 0 -10px 15px rgba(255, 255, 255, 0.3);
+}
+
+/* ========================================
+   17. CODE BLOCKS
+======================================== */
+
+/* Inline code styling */
+code {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #00FF00;
+    border: 1px solid rgba(0, 255, 0, 0.3);
+}
+
+/* Code block (multi-line) */
+pre {
+    background: rgba(0, 0, 0, 0.8);
+    padding: 20px;
+    border-radius: 12px;
+    overflow-x: auto;
+    border: 1px solid rgba(0, 255, 0, 0.3);
+    margin: 15px 0;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+    border: none;
+    display: block;
+    color: #00FF00;
+    line-height: 1.6;
+}
+
+/* ========================================
+   18. HELP PAGE SPECIFIC STYLES
+======================================== */
+
+/* Section headers in help page */
+.help-section {
+    margin: 30px 0;
+}
+
+.help-section h2 {
+    color: #00FFFF;
+    font-size: 1.8em;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #3498db;
+    text-shadow: 0 0 10px #00FFFF;
+}
+
+.help-section h3 {
+    color: #00FFFF;
+    font-size: 1.4em;
+    margin: 20px 0 10px 0;
+    text-shadow: 0 0 5px #00FFFF;
+}
+
+/* Paragraph styling in help page */
+.help-section p {
+    line-height: 1.8;
+    margin-bottom: 15px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* List styling in help page */
+.help-section ul {
+    list-style: none;
+    padding-left: 20px;
+    margin: 15px 0;
+}
+
+.help-section ul li {
+    position: relative;
+    padding-left: 25px;
+    margin-bottom: 10px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Custom bullet points with cyan color */
+.help-section ul li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: #00FFFF;
+    font-size: 1.2em;
+}
+
+/* Command list styling */
+.command-list {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    border-left: 4px solid #00FFFF;
+}
+
+.command-list li {
+    font-family: 'Courier New', monospace;
+    color: #00FF00;
+}
+
+/* ========================================
+   19. LEGACY STYLES (for compatibility)
+======================================== */
+
+/* Old container class (deprecated but kept for compatibility) */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 15px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Old panel title (deprecated) */
+.panel-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #ffffff;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    position: relative;
+}
+
+/* Glowing underline animation */
+.panel-title::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 50px;
+    height: 2px;
+    background: linear-gradient(90deg, #3498db, transparent);
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { box-shadow: 0 0 5px #3498db; }
+    to { box-shadow: 0 0 15px #3498db; }
+}

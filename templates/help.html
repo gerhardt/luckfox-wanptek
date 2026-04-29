@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WANPTEK Power Supply - Help & Documentation</title>
+    <link rel="stylesheet" href="/css">
+</head>
+<body>
+    <!-- Organization branding displayed in top-right corner -->
+    <div class="brand-identity">light &amp; matter group</div>
+    
+    <!-- Interactive color spectrum bar at bottom of page -->
+    <div class="spectrum-bar">
+        <div class="spectrum-segment" style="background-color: #800000;"></div>
+        <div class="spectrum-segment" style="background-color: #FF0000;"></div>
+        <div class="spectrum-segment" style="background-color: #808000;"></div>
+        <div class="spectrum-segment" style="background-color: #FFFF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008000;"></div>
+        <div class="spectrum-segment" style="background-color: #00FF00;"></div>
+        <div class="spectrum-segment" style="background-color: #008080;"></div>
+        <div class="spectrum-segment" style="background-color: #00FFFF;"></div>
+        <div class="spectrum-segment" style="background-color: #000080;"></div>
+        <div class="spectrum-segment" style="background-color: #0000FF;"></div>
+        <div class="spectrum-segment" style="background-color: #800080;"></div>
+        <div class="spectrum-segment" style="background-color: #FF00FF;"></div>
+    </div>
+
+    <!-- Main content container with glassmorphism styling -->
+    <div class="main-container">
+
+        <div class="page-header">
+            <h1>🔌 WANPTEK Power Supply</h1>
+            <p>Help & Documentation</p>
+        </div>
+        
+        <div class="status-bar">
+            <div style="width: 100%; text-align: center;">
+                <button class="button-blue" onclick="location.href='/'">← Back to Control Panel</button>
+            </div>
+        </div>
+        
+        <!-- Main help content -->
+        <div class="content-card bottom-section">
+            <div class="help-section">
+                <h2>📡 SCPI Interface</h2>
+                <p>
+                    The WANPTEK power supply can be controlled programmatically via a SCPI (Standard Commands for 
+                    Programmable Instruments) interface. This allows you to automate experiments, create custom 
+                    control sequences, and integrate the power supply into larger test systems.
+                </p>
+                
+                <h3>Connection Information</h3>
+                <p>
+                    The SCPI server is accessible via TCP/IP on port <strong>5050</strong>. You can connect using 
+                    telnet, socket programming, or any SCPI-compatible library.
+                </p>
+                <div style="background: rgba(0, 0, 0, 0.5); padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <strong>Connection Details:</strong><br>
+                    IP Address: <code>{{ ipa }}</code><br>
+                    Port: <code>5050</code><br>
+                    Protocol: <code>TCP/IP</code>
+                </div>
+
+                <h3>Testing the Connection</h3>
+                <p>You can test the SCPI interface using telnet from your terminal:</p>
+                <pre><code># Connect via telnet
+telnet {{ ipa }} 5050
+
+# Once connected, try these commands:
+*IDN?                    # Get device identification
+VOLT?                    # Query voltage setting
+CURR?                    # Query current setting
+MEAS:VOLT?              # Measure actual voltage
+MEAS:CURR?              # Measure actual current</code></pre>
+
+                <h3>Python Control Example</h3>
+                <p>
+                    Here's a complete Python example showing how to control the power supply using standard 
+                    socket programming:
+                </p>
+                <pre><code>#!/usr/bin/env python3
+"""
+WANPTEK Power Supply Control via SCPI
+Example script demonstrating basic control operations
+"""
+
+import socket
+import time
+
+class WanptekSCPI:
+    """Simple SCPI interface for WANPTEK power supply"""
+    
+    def __init__(self, host='{{ ipa }}', port=5050, timeout=2.0):
+        """
+        Initialize connection to power supply
+        
+        Args:
+            host: IP address of the power supply
+            port: SCPI server port (default: 5050)
+            timeout: Socket timeout in seconds
+        """
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.socket = None
+        self.connect()
+    
+    def connect(self):
+        """Establish connection to the SCPI server"""
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.settimeout(self.timeout)
+        self.socket.connect((self.host, self.port))
+        print(f"Connected to {self.host}:{self.port}")
+    
+    def send_command(self, command):
+        """
+        Send a command without expecting a response
+        
+        Args:
+            command: SCPI command string (without newline)
+        """
+        self.socket.sendall((command + '\n').encode())
+    
+    def query(self, command):
+        """
+        Send a query and return the response
+        
+        Args:
+            command: SCPI query string (without newline)
+            
+        Returns:
+            Response string from the device
+        """
+        self.socket.sendall((command + '\n').encode())
+        response = self.socket.recv(1024).decode().strip()
+        return response
+    
+    def close(self):
+        """Close the connection"""
+        if self.socket:
+            self.socket.close()
+            print("Connection closed")
+    
+    # Convenience methods for common operations
+    
+    def get_id(self):
+        """Get device identification"""
+        return self.query('*IDN?')
+    
+    def set_voltage(self, voltage):
+        """Set output voltage in volts"""
+        self.send_command(f'VOLT {voltage}')
+    
+    def set_current(self, current):
+        """Set output current in amps"""
+        self.send_command(f'CURR {current}')
+    
+    def get_voltage_setting(self):
+        """Get configured voltage setting"""
+        return float(self.query('VOLT?'))
+    
+    def get_current_setting(self):
+        """Get configured current setting"""
+        return float(self.query('CURR?'))
+    
+    def measure_voltage(self):
+        """Measure actual output voltage"""
+        return float(self.query('MEAS:VOLT?'))
+    
+    def measure_current(self):
+        """Measure actual output current"""
+        return float(self.query('MEAS:CURR?'))
+    
+    def measure_power(self):
+        """Measure actual output power"""
+        return float(self.query('MEAS:POW?'))
+    
+    def output_on(self):
+        """Turn output ON"""
+        self.send_command('OUTP ON')
+    
+    def output_off(self):
+        """Turn output OFF"""
+        self.send_command('OUTP OFF')
+    
+    def get_output_state(self):
+        """Check if output is ON or OFF"""
+        response = self.query('OUTP?')
+        return response == '1' or response.upper() == 'ON'
+
+
+# Example usage
+def main():
+    """Example demonstration of power supply control"""
+    
+    # Connect to power supply
+    psu = WanptekSCPI(host='{{ ipa }}')
+    
+    try:
+        # Get device information
+        print("Device ID:", psu.get_id())
+        
+        # Set voltage and current limits
+        print("\nSetting voltage to 5.0V and current limit to 1.0A...")
+        psu.set_voltage(5.0)
+        psu.set_current(1.0)
+        time.sleep(0.1)  # Small delay for settings to apply
+        
+        # Verify settings
+        print(f"Configured voltage: {psu.get_voltage_setting():.2f}V")
+        print(f"Configured current: {psu.get_current_setting():.3f}A")
+        
+        # Turn on the output
+        print("\nTurning output ON...")
+        psu.output_on()
+        time.sleep(0.5)
+        
+        # Read actual measurements
+        print(f"Measured voltage: {psu.measure_voltage():.2f}V")
+        print(f"Measured current: {psu.measure_current():.3f}A")
+        print(f"Measured power: {psu.measure_power():.2f}W")
+        
+        # Run a voltage sweep
+        print("\nPerforming voltage sweep from 3V to 8V...")
+        for voltage in range(30, 81, 5):  # 3.0V to 8.0V in 0.5V steps
+            v = voltage / 10.0
+            psu.set_voltage(v)
+            time.sleep(0.2)
+            measured_v = psu.measure_voltage()
+            measured_i = psu.measure_current()
+            print(f"Set: {v:.1f}V | Measured: {measured_v:.2f}V, {measured_i:.3f}A")
+        
+        # Turn off the output
+        print("\nTurning output OFF...")
+        psu.output_off()
+        
+    finally:
+        # Always close the connection
+        psu.close()
+
+
+if __name__ == '__main__':
+    main()</code></pre>
+
+                <h3>Common SCPI Commands</h3>
+                <div class="command-list">
+                    <ul>
+                        <li><code>*IDN?</code> - Get device identification</li>
+                        <li><code>*RST</code> - Reset device to default state</li>
+                        <li><code>VOLT &lt;value&gt;</code> - Set voltage (in volts)</li>
+                        <li><code>VOLT?</code> - Query voltage setting</li>
+                        <li><code>CURR &lt;value&gt;</code> - Set current limit (in amps)</li>
+                        <li><code>CURR?</code> - Query current setting</li>
+                        <li><code>OUTP ON</code> - Turn output ON</li>
+                        <li><code>OUTP OFF</code> - Turn output OFF</li>
+                        <li><code>OUTP?</code> - Query output state</li>
+                        <li><code>MEAS:VOLT?</code> - Measure actual voltage</li>
+                        <li><code>MEAS:CURR?</code> - Measure actual current</li>
+                        <li><code>MEAS:POW?</code> - Measure actual power</li>
+                        <li><code>MEAS:ALL?</code> - Measure voltage, current, and power</li>
+                    </ul>
+                </div>
+
+                <h3>Advanced Features</h3>
+                <p>
+                    The SCPI interface supports additional advanced features:
+                </p>
+                <ul>
+                    <li><strong>Over-Current Protection (OCP):</strong> Control and monitor current protection</li>
+                    <li><strong>Status Queries:</strong> Check device status and error conditions</li>
+                    <li><strong>Batch Commands:</strong> Send multiple commands in sequence for efficiency</li>
+                </ul>
+
+                <h3>Tips for Programming</h3>
+                <ul>
+                    <li>Always check the output state before making measurements</li>
+                    <li>Add small delays (100-200ms) after setting values to allow hardware to settle</li>
+                    <li>Use try/except blocks to handle network errors gracefully</li>
+                    <li>Close the connection properly when done to free resources</li>
+                    <li>For continuous monitoring, consider using the web interface's real-time updates</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Footer with copyright and system information -->
+        <div class="page-header">
+            <p>
+                <!-- Copyleft symbol (rotated copyright) -->
+                <span class="copyleft">&copy;</span> 2025 Ilja Gerhardt |
+                IP-Address: {{ ipa }} |
+                MAC-Address: {{ mac }}
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>
