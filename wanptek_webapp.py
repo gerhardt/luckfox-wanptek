@@ -19,7 +19,7 @@ import socket
 import threading
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, current_app
 from wanptek_controller import WanptekPowerSupply, WanptekMonitor
 import re
 
@@ -29,6 +29,22 @@ psu_lock = threading.Lock()
 
 # Flask app
 app = Flask(__name__)
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.254.254.254', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+IP_ADDRESS=get_ip()
+MAC_ADDRESS=open('/sys/class/net/eth0/address').readline()
 
 class SCPICommandProcessor:
     """SCPI command processor compatible with Rigol DP800 commands"""
@@ -123,6 +139,8 @@ class SCPICommandProcessor:
                     handler = cmd_handler
                     break
             
+            print("handler:")
+            print(str(handler))
             if handler:
                 if param is not None:
                     return handler(param)
@@ -444,7 +462,17 @@ class SCPIServer:
 @app.route('/')
 def index():
     """Main web interface"""
-    return render_template('index.html')
+    return render_template('index.html', ipa=IP_ADDRESS, mac=MAC_ADDRESS)
+
+@app.route('/css')
+def css():
+    """CSS interface"""
+    return current_app.send_static_file("style.css")
+
+@app.route('/help')
+def help():
+    """HELP interface"""
+    return render_template('help.html', ipa=IP_ADDRESS, mac=MAC_ADDRESS)
 
 @app.route('/api/status')
 def get_status():
@@ -588,636 +616,16 @@ def stream_data():
     
     return Response(generate(), mimetype='text/plain')
 
-# HTML Template (inline for simplicity)
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WANPTEK Power Supply Control</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: linear-gradient(45deg, #2c3e50, #34495e);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        
-        .status-bar {
-            background: #3498db;
-            color: white;
-            padding: 10px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .led {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #e74c3c;
-            box-shadow: 0 0 10px rgba(231, 76, 60, 0.8);
-        }
-        
-        .led.on {
-            background: #2ecc71;
-            box-shadow: 0 0 10px rgba(46, 204, 113, 0.8);
-        }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            padding: 30px;
-        }
-        
-        .control-panel {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 25px;
-            border: 1px solid #e9ecef;
-        }
-        
-        .measurement-panel {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 25px;
-            border: 1px solid #e9ecef;
-        }
-        
-        .panel-title {
-            font-size: 1.3em;
-            font-weight: bold;
-            margin-bottom: 20px;
-            color: #2c3e50;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-        }
-        
-        .control-group {
-            margin-bottom: 20px;
-        }
-        
-        .control-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #555;
-        }
-        
-        .control-group input {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        
-        .control-group input:focus {
-            outline: none;
-            border-color: #3498db;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            flex: 1;
-        }
-        
-        .btn-primary {
-            background: #3498db;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2980b9;
-            transform: translateY(-2px);
-        }
-        
-        .btn-success {
-            background: #2ecc71;
-            color: white;
-        }
-        
-        .btn-success:hover {
-            background: #27ae60;
-            transform: translateY(-2px);
-        }
-        
-        .btn-danger {
-            background: #e74c3c;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #c0392b;
-            transform: translateY(-2px);
-        }
-        
-        .measurement-display {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .measurement-item {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            border: 1px solid #e9ecef;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .measurement-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-        
-        .measurement-unit {
-            font-size: 0.9em;
-            color: #7f8c8d;
-        }
-        
-        .status-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .status-item {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #e9ecef;
-        }
-        
-        .status-value {
-            font-weight: bold;
-        }
-        
-        .status-value.on {
-            color: #2ecc71;
-        }
-        
-        .status-value.off {
-            color: #e74c3c;
-        }
-        
-        .footer {
-            background: #34495e;
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
-        
-        .scpi-info {
-            background: #f39c12;
-            color: white;
-            padding: 15px;
-            margin: 20px 30px;
-            border-radius: 8px;
-        }
-        
-        @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-            
-            .measurement-display {
-                grid-template-columns: 1fr;
-            }
-            
-            .status-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔌 WANPTEK Power Supply</h1>
-            <p>Web Interface & SCPI Control</p>
-        </div>
-        
-        <div class="status-bar">
-            <div class="status-indicator">
-                <div class="led" id="connection-led"></div>
-                <span id="connection-status">Connecting...</span>
-            </div>
-            <div id="device-info">Device Info Loading...</div>
-        </div>
-        
-        <div class="scpi-info">
-            <strong>📡 SCPI Server:</strong> Connect via telnet to <code>localhost:5050</code> for programmatic control
-        </div>
-        
-        <div class="main-content">
-            <div class="control-panel">
-                <div class="panel-title">⚙️ Control Panel</div>
-                
-                <div class="control-group">
-                    <label for="voltage-input">Voltage (V)</label>
-                    <input type="number" id="voltage-input" step="0.01" min="0" placeholder="0.00">
-                </div>
-                
-                <div class="control-group">
-                    <label for="current-input">Current (A)</label>
-                    <input type="number" id="current-input" step="0.001" min="0" placeholder="0.000">
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="setOutput()">Set Values</button>
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn btn-success" id="power-btn" onclick="togglePower()">Power ON</button>
-                    <button class="btn btn-primary" onclick="toggleOCP()">Toggle OCP</button>
-                </div>
-            </div>
-            
-            <div class="measurement-panel">
-                <div class="panel-title">📊 Measurements</div>
-                
-                <div class="measurement-display">
-                    <div class="measurement-item">
-                        <div class="measurement-value" id="voltage-reading">0.00</div>
-                        <div class="measurement-unit">Volts</div>
-                    </div>
-                    <div class="measurement-item">
-                        <div class="measurement-value" id="current-reading">0.000</div>
-                        <div class="measurement-unit">Amps</div>
-                    </div>
-                    <div class="measurement-item">
-                        <div class="measurement-value" id="power-reading">0.00</div>
-                        <div class="measurement-unit">Watts</div>
-                    </div>
-                </div>
-                
-                <div class="status-grid">
-                    <div class="status-item">
-                        <span>Alarm:</span>
-                        <span class="status-value" id="alarm-status">None</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>&copy; 2024 WANPTEK Power Supply Controller | Last Update: <span id="last-update">Never</span></p>
-        </div>
-    </div>
-
-    <script>
-        let currentStatus = {};
-        let eventSource = null;
-        
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeApp();
-            startRealtimeUpdates();
-        });
-        
-        function initializeApp() {
-            // Load initial status
-            updateStatus();
-            
-            // Set up event listeners
-            document.getElementById('voltage-input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    setOutput();
-                }
-            });
-            
-            document.getElementById('current-input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    setOutput();
-                }
-            });
-        }
-        
-        function startRealtimeUpdates() {
-            // Start Server-Sent Events for real-time updates
-            if (eventSource) {
-                eventSource.close();
-            }
-            
-            eventSource = new EventSource('/api/stream');
-            
-            eventSource.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.error) {
-                        updateConnectionStatus(false, data.error);
-                    } else {
-                        updateRealtimeData(data);
-                        updateConnectionStatus(true, 'Connected');
-                    }
-                } catch (e) {
-                    console.error('Error parsing real-time data:', e);
-                }
-            };
-            
-            eventSource.onerror = function(event) {
-                updateConnectionStatus(false, 'Connection lost');
-                // Attempt to reconnect after 5 seconds
-                setTimeout(startRealtimeUpdates, 5000);
-            };
-        }
-        
-        function updateStatus() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        currentStatus = data.status;
-                        updateDisplay(data.status);
-                        updateDeviceInfo(data.device_info);
-                        updateConnectionStatus(true, 'Connected');
-                    } else {
-                        updateConnectionStatus(false, data.error);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching status:', error);
-                    updateConnectionStatus(false, 'Connection error');
-                });
-        }
-        
-        function updateRealtimeData(data) {
-            // Update real-time measurements
-            document.getElementById('voltage-reading').textContent = data.voltage.toFixed(2);
-            document.getElementById('current-reading').textContent = data.current.toFixed(3);
-            document.getElementById('power-reading').textContent = data.power.toFixed(2);
-            
-            // Update status indicators
-            const outputStatus = document.getElementById('output-status');
-            if (data.power_on) {
-                outputStatus.textContent = 'ON';
-                outputStatus.className = 'status-value on';
-            } else {
-                outputStatus.textContent = 'OFF';
-                outputStatus.className = 'status-value off';
-            }
-            
-            const modeStatus = document.getElementById('mode-status');
-            modeStatus.textContent = data.constant_current ? 'CC' : 'CV';
-            
-            // Update power button
-            const powerBtn = document.getElementById('power-btn');
-            if (data.power_on) {
-                powerBtn.textContent = 'Power OFF';
-                powerBtn.className = 'btn btn-danger';
-            } else {
-                powerBtn.textContent = 'Power ON';
-                powerBtn.className = 'btn btn-success';
-            }
-            
-            // Update timestamp
-            document.getElementById('last-update').textContent = new Date(data.timestamp).toLocaleTimeString();
-        }
-        
-        function updateDisplay(status) {
-            // Update measurements
-            document.getElementById('voltage-reading').textContent = status.real_voltage.toFixed(2);
-            document.getElementById('current-reading').textContent = status.real_current.toFixed(3);
-            document.getElementById('power-reading').textContent = status.real_power.toFixed(2);
-            
-            // Update control inputs with current settings
-            document.getElementById('voltage-input').placeholder = status.set_voltage.toFixed(2);
-            document.getElementById('current-input').placeholder = status.set_current.toFixed(3);
-            
-            // Update status indicators
-            const outputStatus = document.getElementById('output-status');
-            if (status.power_on) {
-                outputStatus.textContent = 'ON';
-                outputStatus.className = 'status-value on';
-            } else {
-                outputStatus.textContent = 'OFF';
-                outputStatus.className = 'status-value off';
-            }
-            
-            const modeStatus = document.getElementById('mode-status');
-            modeStatus.textContent = status.constant_current_mode ? 'CC' : 'CV';
-            
-            const ocpStatus = document.getElementById('ocp-status');
-            ocpStatus.textContent = status.ocp_enabled ? 'Enabled' : 'Disabled';
-            ocpStatus.className = status.ocp_enabled ? 'status-value on' : 'status-value off';
-            
-            const alarmStatus = document.getElementById('alarm-status');
-            alarmStatus.textContent = status.alarm_active ? 'ACTIVE' : 'None';
-            alarmStatus.className = status.alarm_active ? 'status-value off' : 'status-value on';
-            
-            // Update power button
-            const powerBtn = document.getElementById('power-btn');
-            if (status.power_on) {
-                powerBtn.textContent = 'Power OFF';
-                powerBtn.className = 'btn btn-danger';
-            } else {
-                powerBtn.textContent = 'Power ON';
-                powerBtn.className = 'btn btn-success';
-            }
-            
-            // Update timestamp
-            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
-        }
-        
-        function updateDeviceInfo(deviceInfo) {
-            if (deviceInfo) {
-                document.getElementById('device-info').textContent = 
-                    `${deviceInfo.model} @ ${deviceInfo.port} (${deviceInfo.baudrate} baud)`;
-            }
-        }
-        
-        function updateConnectionStatus(connected, message) {
-            const led = document.getElementById('connection-led');
-            const status = document.getElementById('connection-status');
-            
-            if (connected) {
-                led.className = 'led on';
-                status.textContent = message || 'Connected';
-            } else {
-                led.className = 'led';
-                status.textContent = message || 'Disconnected';
-            }
-        }
-        
-        function setOutput() {
-            const voltage = document.getElementById('voltage-input').value;
-            const current = document.getElementById('current-input').value;
-            
-            const data = {};
-            if (voltage !== '') {
-                data.voltage = parseFloat(voltage);
-            }
-            if (current !== '') {
-                data.current = parseFloat(current);
-            }
-            
-            if (Object.keys(data).length === 0) {
-                alert('Please enter voltage and/or current values');
-                return;
-            }
-            
-            fetch('/api/set_output', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updateDisplay(data.status);
-                    // Clear input fields
-                    document.getElementById('voltage-input').value = '';
-                    document.getElementById('current-input').value = '';
-                } else {
-                    alert('Error setting output: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error setting output:', error);
-                alert('Network error setting output');
-            });
-        }
-        
-        function togglePower() {
-            const isOn = currentStatus.power_on;
-            const action = isOn ? 'off' : 'on';
-            
-            fetch(`/api/power/${action}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        currentStatus = data.status;
-                        updateDisplay(data.status);
-                    } else {
-                        alert('Error toggling power: ' + data.error);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error toggling power:', error);
-                    alert('Network error toggling power');
-                });
-        }
-        
-        function toggleOCP() {
-            const currentOCP = currentStatus.ocp_enabled;
-            
-            fetch('/api/set_output', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    ocp_enable: !currentOCP
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    currentStatus = data.status;
-                    updateDisplay(data.status);
-                } else {
-                    alert('Error toggling OCP: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error toggling OCP:', error);
-                alert('Network error toggling OCP');
-            });
-        }
-        
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function() {
-            if (eventSource) {
-                eventSource.close();
-            }
-        });
-    </script>
-</body>
-</html>
-'''
 
 # Create templates directory and save the HTML template
 import os
-def create_template():
-    """Create the HTML template file"""
-    template_dir = 'templates'
-    if not os.path.exists(template_dir):
-        os.makedirs(template_dir)
-    
-    with open(os.path.join(template_dir, 'index.html'), 'w') as f:
-        f.write(HTML_TEMPLATE)
-
-# @app.before_first_request
-def setup_templates():
-    """Setup templates before first request"""
-    create_template()
 
 def initialize_power_supply():
     """Initialize the power supply connection"""
     global psu
     try:
         print("🔍 Initializing WANPTEK power supply...")
-        psu = WanptekPowerSupply(auto_detect=True)
+        psu = WanptekPowerSupply(port="/dev/ttyS1",debug=False)
         print("✅ Power supply initialized successfully")
         return True
     except Exception as e:
@@ -1234,9 +642,6 @@ def main():
     if not initialize_power_supply():
         print("⚠️  Continuing without power supply connection")
         print("   You can try to reconnect through the web interface")
-    
-    # Create templates directory
-    create_template()
     
     # Start SCPI server in background thread
     if psu:
