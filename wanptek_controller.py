@@ -2,6 +2,9 @@ import serial
 import struct
 import time
 import glob
+import logging
+import os
+from datetime import datetime
 from typing import Tuple, Optional, Dict, List
 from enum import IntEnum
 
@@ -34,23 +37,153 @@ class CurrentRange(IntEnum):
     A100 = 12
     A200 = 13
 
+class DebugLogger:
+    """Enhanced debug logger for serial communication"""
+    
+    def __init__(self, enabled: bool = False, log_file: Optional[str] = None):
+        self.enabled = enabled
+        self.logger = None
+        self.log_file = log_file or f"/tmp/wanptek_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        
+        if self.enabled:
+            self._setup_logger()
+    
+    def _setup_logger(self):
+        """Setup the debug logger"""
+        self.logger = logging.getLogger('WanptekDebug')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # Remove existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # File handler
+        file_handler = logging.FileHandler(self.log_file, mode='w')
+        file_handler.setLevel(logging.DEBUG)
+        
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        
+        # Formatter
+        formatter = logging.Formatter(
+            '%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+        self.logger.info(f"=== WANPTEK Debug Session Started ===")
+        self.logger.info(f"Log file: {self.log_file}")
+    
+    def enable(self, log_file: Optional[str] = None):
+        """Enable debug logging"""
+        if log_file:
+            self.log_file = log_file
+        self.enabled = True
+        if not self.logger:
+            self._setup_logger()
+        self.info("Debug logging enabled")
+    
+    def disable(self):
+        """Disable debug logging"""
+        if self.enabled:
+            self.info("Debug logging disabled")
+        self.enabled = False
+    
+    def _log(self, level: str, message: str):
+        """Internal logging method"""
+        if self.enabled and self.logger:
+            getattr(self.logger, level.lower())(message)
+    
+    def debug(self, message: str):
+        self._log('DEBUG', message)
+    
+    def info(self, message: str):
+        self._log('INFO', message)
+    
+    def warning(self, message: str):
+        self._log('WARNING', message)
+    
+    def error(self, message: str):
+        self._log('ERROR', message)
+    
+    def hex_dump(self, data: bytes, prefix: str = ""):
+        """Create detailed hex dump of data"""
+        if not self.enabled:
+            return
+            
+        if not data:
+            self.debug(f"{prefix}[EMPTY]")
+            return
+        
+        # Create hex string with spaces
+        hex_str = ' '.join(f'{b:02X}' for b in data)
+        
+        # Create ASCII representation
+        ascii_str = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in data)
+        
+        # Log basic info
+        self.debug(f"{prefix}Length: {len(data)} bytes")
+        self.debug(f"{prefix}Hex:    {hex_str}")
+        self.debug(f"{prefix}ASCII:  {ascii_str}")
+        
+        # Create detailed hex dump (16 bytes per line)
+        hex_dump_lines = []
+        for i in range(0, len(data), 16):
+            chunk = data[i:i+16]
+            hex_part = ' '.join(f'{b:02X}' for b in chunk)
+            ascii_part = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in chunk)
+            hex_dump_lines.append(f"{prefix}{i:04X}: {hex_part:<47} |{ascii_part}|")
+        
+        for line in hex_dump_lines:
+            self.debug(line)
+    
+    def log_command(self, description: str, command: bytes, response: bytes = None, 
+                   error: str = None, duration: float = None):
+        """Log a complete command transaction"""
+        if not self.enabled:
+            return
+        
+        self.info(f"--- {description} ---")
+        
+        if duration is not None:
+            self.debug(f"Duration: {duration:.3f}s")
+        
+        self.debug("COMMAND SENT:")
+        self.hex_dump(command, "  ")
+        
+        if response is not None:
+            self.debug("RESPONSE RECEIVED:")
+            self.hex_dump(response, "  ")
+            
+            # Parse response structure
+            if len(response) >= 3:
+                addr = response[0]
+                func = response[1]
+                self.debug(f"  Response - Address: 0x{addr:02X}, Function: 0x{func:02X}")
+                
+                if func == 0x03:  # Read response
+                    if len(response) >= 3:
+                        byte_count = response[2]
+                        self.debug(f"  Data bytes: {byte_count}")
+                elif func == 0x10:  # Write response
+                    if len(response) >= 6:
+                        start_addr = struct.unpack('>H', response[2:4])[0]
+                        num_regs = struct.unpack('>H', response[4:6])[0]
+                        self.debug(f"  Write confirmed - Start: 0x{start_addr:04X}, Registers: {num_regs}")
+        
+        if error:
+            self.error(f"ERROR: {error}")
+        
+        self.debug("")  # Empty line for readability
+
 class WanptekPowerSupply:
     """
-    Universal Python controller for WANPTEK DC Power Supply using MODBUS-RTU protocol.
-    
-    Supports all WANPTEK models with automatic device detection and configuration.
-    Tested on Linux with /dev/ttyUSB* devices.
-    
-    Features:
-    - Auto-detect device specifications and capabilities
-    - Set/read voltage and current with proper scaling
-    - Power control (on/off)
-    - OCP (Over Current Protection) control
-    - Keyboard lock control
-    - Real-time status monitoring
-    - Support for all voltage/current ranges
-    - Automatic endianness detection
-    - Robust error handling and reconnection
+    Universal Python controller for WANPTEK DC Power Supply with enhanced debugging.
     """
     
     # Voltage range mapping (series_code -> max_voltage)
@@ -70,9 +203,10 @@ class WanptekPowerSupply:
     
     def __init__(self, port: Optional[str] = None, slave_addr: int = 0, 
                  baudrate: Optional[int] = None, timeout: float = 1.0, 
-                 auto_detect: bool = True):
+                 auto_detect: bool = True, debug: bool = False, 
+                 debug_log_file: Optional[str] = None):
         """
-        Initialize the power supply controller with universal compatibility.
+        Initialize the power supply controller with debug capabilities.
         
         Args:
             port: Serial port (e.g., '/dev/ttyUSB0'). If None, auto-detect.
@@ -80,10 +214,15 @@ class WanptekPowerSupply:
             baudrate: Communication speed. If None, auto-detect.
             timeout: Serial communication timeout in seconds
             auto_detect: Try to auto-detect port and baudrate
+            debug: Enable debug logging
+            debug_log_file: Custom debug log file path
         """
         self.slave_addr = slave_addr
         self.timeout = timeout
         self.serial = None
+        
+        # Initialize debug logger
+        self.debug_logger = DebugLogger(debug, debug_log_file)
         
         # Device specifications (detected from device)
         self.voltage_decimal_places = 2
@@ -101,6 +240,8 @@ class WanptekPowerSupply:
         self.connected = False
         self.last_status = {}
         
+        self.debug_logger.info(f"Initializing WANPTEK controller (slave_addr={slave_addr}, timeout={timeout}s)")
+        
         if auto_detect:
             self._auto_connect(port, baudrate)
         else:
@@ -109,6 +250,16 @@ class WanptekPowerSupply:
             if baudrate is None:
                 baudrate = 9600
             self._connect(port, baudrate)
+    
+    def enable_debug(self, log_file: Optional[str] = None):
+        """Enable debug logging"""
+        self.debug_logger.enable(log_file)
+        print(f"Debug logging enabled. Log file: {self.debug_logger.log_file}")
+    
+    def disable_debug(self):
+        """Disable debug logging"""
+        self.debug_logger.disable()
+        print("Debug logging disabled")
     
     @staticmethod
     def find_devices() -> List[str]:
@@ -122,6 +273,7 @@ class WanptekPowerSupply:
     def _auto_connect(self, preferred_port: Optional[str] = None, 
                      preferred_baudrate: Optional[int] = None):
         """Auto-detect and connect to WANPTEK device"""
+        self.debug_logger.info("Starting auto-detection of WANPTEK power supply...")
         print("🔍 Auto-detecting WANPTEK power supply...")
         
         # Get list of potential devices
@@ -132,29 +284,42 @@ class WanptekPowerSupply:
             if not ports_to_try:
                 ports_to_try = ['/dev/ttyUSB0']  # Fallback
         
+        self.debug_logger.debug(f"Ports to try: {ports_to_try}")
+        
         # Get list of baudrates to try
         if preferred_baudrate:
             baudrates_to_try = [preferred_baudrate]
         else:
             baudrates_to_try = [9600, 4800, 19200, 2400]  # Most common first
         
+        self.debug_logger.debug(f"Baudrates to try: {baudrates_to_try}")
+        
         # Try each combination
         for port in ports_to_try:
+            self.debug_logger.info(f"Trying port: {port}")
             print(f"  📡 Trying port: {port}")
             for baudrate in baudrates_to_try:
+                self.debug_logger.debug(f"  Trying baudrate: {baudrate}")
                 try:
                     if self._connect(port, baudrate, silent=True):
+                        self.debug_logger.info(f"Successfully connected to {self.device_model} at {port} ({baudrate} baud)")
                         print(f"  ✅ Connected to {self.device_model} at {port} ({baudrate} baud)")
                         return
-                except Exception:
+                except Exception as e:
+                    self.debug_logger.debug(f"  Connection failed: {e}")
                     continue
         
-        raise Exception("❌ Could not auto-detect WANPTEK device. Please specify port and baudrate manually.")
+        error_msg = "Could not auto-detect WANPTEK device. Please specify port and baudrate manually."
+        self.debug_logger.error(error_msg)
+        raise Exception(f"❌ {error_msg}")
     
     def _connect(self, port: str, baudrate: int, silent: bool = False) -> bool:
         """Connect to device and verify communication"""
         try:
+            self.debug_logger.info(f"Attempting connection to {port} at {baudrate} baud")
+            
             if self.serial and self.serial.is_open:
+                self.debug_logger.debug("Closing existing serial connection")
                 self.serial.close()
             
             self.serial = serial.Serial(
@@ -166,9 +331,13 @@ class WanptekPowerSupply:
                 timeout=self.timeout
             )
             
+            self.debug_logger.debug(f"Serial port opened: {self.serial}")
+            
             # Test communication by reading status
             self._detect_device_specs()
             self.connected = True
+            
+            self.debug_logger.info(f"Successfully connected to {self.device_model}")
             
             if not silent:
                 print(f"✅ Connected to {self.device_model}")
@@ -177,6 +346,7 @@ class WanptekPowerSupply:
             return True
             
         except Exception as e:
+            self.debug_logger.error(f"Connection failed: {e}")
             if not silent:
                 print(f"❌ Connection failed: {e}")
             if self.serial and self.serial.is_open:
@@ -185,24 +355,30 @@ class WanptekPowerSupply:
     
     def _detect_device_specs(self):
         """Detect device specifications from status response"""
+        self.debug_logger.info("Detecting device specifications...")
         status = self._read_raw_status()
         
         # Extract device specifications
         data = status[3:19]
+        self.debug_logger.debug("Parsing device configuration from status response")
         
         # Parse configuration bytes
         voltage_info = data[1]
         current_info = data[2]
         
         self.voltage_decimal_places = 1 if (voltage_info >> 4) & 0x0F else 2
-        self.current_decimal_places = 1 if (current_info >> 4) & 0x0F else 2
+        self.current_decimal_places = 2 if (current_info >> 4) & 0x0F else 3
         
         self.voltage_series = voltage_info & 0x0F
         self.current_series = current_info & 0x0F
         
+        self.debug_logger.debug(f"Voltage info byte: 0x{voltage_info:02X} -> series={self.voltage_series}, decimals={self.voltage_decimal_places}")
+        self.debug_logger.debug(f"Current info byte: 0x{current_info:02X} -> series={self.current_series}, decimals={self.current_decimal_places}")
+        
         # Determine endianness
         status_byte = data[0]
         self.little_endian = not bool(status_byte & 0x08)
+        self.debug_logger.debug(f"Status byte: 0x{status_byte:02X} -> endianness={'little' if self.little_endian else 'big'}")
         
         # Get nominal and max values
         self.nominal_voltage = self.VOLTAGE_RANGES.get(self.voltage_series, 0)
@@ -213,13 +389,17 @@ class WanptekPowerSupply:
         max_current_raw = self._unpack_word(data[14:16])
         
         voltage_divisor = 10 ** self.voltage_decimal_places
-        current_divisor = 10 ** self.current_decimal_places
+        current_divisor = 10**self.current_decimal_places
         
         self.max_voltage = max_voltage_raw / voltage_divisor
         self.max_current = max_current_raw / current_divisor
         
+        self.debug_logger.debug(f"Max voltage raw: {max_voltage_raw} -> {self.max_voltage}V")
+        self.debug_logger.debug(f"Max current raw: {max_current_raw} -> {self.max_current}A")
+        
         # Determine device model
         self.device_model = f"WANPTEK {self.nominal_voltage}V/{self.nominal_current}A"
+        self.debug_logger.info(f"Device detected: {self.device_model}")
     
     def _print_device_info(self):
         """Print detected device information"""
@@ -241,50 +421,88 @@ class WanptekPowerSupply:
                     crc = (crc >> 1) ^ 0xA001
                 else:
                     crc >>= 1
+        
+        self.debug_logger.debug(f"CRC calculated for {len(data)} bytes: 0x{crc:04X}")
         return crc
     
     def _pack_word(self, value: int) -> bytes:
         """Pack 16-bit word according to detected endianness"""
         if self.little_endian:
-            return struct.pack('<H', value)
+            result = struct.pack('<H', value)
         else:
-            return struct.pack('>H', value)
+            result = struct.pack('>H', value)
+        
+        self.debug_logger.debug(f"Packed word {value} ({'little' if self.little_endian else 'big'} endian): {result.hex().upper()}")
+        return result
     
     def _unpack_word(self, data: bytes) -> int:
         """Unpack 16-bit word according to detected endianness"""
         if self.little_endian:
-            return struct.unpack('<H', data)[0]
+            result = struct.unpack('<H', data)[0]
         else:
-            return struct.unpack('>H', data)[0]
+            result = struct.unpack('>H', data)[0]
+        
+        self.debug_logger.debug(f"Unpacked word from {data.hex().upper()} ({'little' if self.little_endian else 'big'} endian): {result}")
+        return result
     
-    def _send_command(self, command: bytes) -> bytes:
-        """Send command and receive response with error handling"""
-        if not self.connected or not self.serial or not self.serial.is_open:
-            raise Exception("Device not connected")
+    def _send_command(self, command: bytes, description: str = "Command") -> bytes:
+        """Send command and receive response with enhanced error handling and logging"""
+        # if not self.connected or not self.serial or not self.serial.is_open:
+        #    error_msg = "Device not connected"
+        #    self.debug_logger.error(error_msg)
+        #    raise Exception(error_msg)
+        
+        start_time = time.time()
         
         # Add CRC
         crc = self._calculate_crc(command)
         full_command = command + struct.pack('<H', crc)
         
         # Clear input buffer
+        self.debug_logger.debug("Clearing input buffer")
         self.serial.reset_input_buffer()
         
         # Send command
+        self.debug_logger.debug(f"Sending command to serial port")
+        self.debug_logger.debug(full_command)
         self.serial.write(full_command)
         self.serial.flush()
         
         # Read response with timeout handling
         response = b''
-        start_time = time.time()
+        read_start = time.time()
+        bytes_expected = None
         
-        while len(response) < 3 and (time.time() - start_time) < self.timeout:
+        while len(response) < 3 and (time.time() - read_start) < self.timeout:
             chunk = self.serial.read(1024)
-            response += chunk
-            if len(chunk) == 0:
+            if chunk:
+                response += chunk
+                self.debug_logger.debug(f"Received {len(chunk)} bytes: {chunk.hex().upper()}")
+                
+                # Try to determine expected response length
+                if len(response) >= 3 and bytes_expected is None:
+                    func_code = response[1]
+                    if func_code == 0x03:  # Read response
+                        if len(response) >= 3:
+                            data_bytes = response[2]
+                            bytes_expected = 3 + data_bytes + 2  # addr + func + len + data + crc
+                            self.debug_logger.debug(f"Expected response length: {bytes_expected} bytes")
+                    elif func_code == 0x10:  # Write response
+                        bytes_expected = 8  # Fixed length for write response
+                        self.debug_logger.debug(f"Expected response length: {bytes_expected} bytes")
+                
+                # Check if we have complete response
+                if bytes_expected and len(response) >= bytes_expected:
+                    break
+            else:
                 time.sleep(0.01)  # Small delay to prevent busy waiting
         
+        duration = time.time() - start_time
+        
         if len(response) < 3:
-            raise Exception(f"Timeout: received only {len(response)} bytes")
+            error_msg = f"Timeout: received only {len(response)} bytes in {duration:.3f}s"
+            self.debug_logger.log_command(description, full_command, response, error_msg, duration)
+            raise Exception(error_msg)
         
         # Verify CRC
         data_part = response[:-2]
@@ -292,17 +510,25 @@ class WanptekPowerSupply:
         calculated_crc = self._calculate_crc(data_part)
         
         if received_crc != calculated_crc:
-            raise Exception(f"CRC verification failed: expected {calculated_crc:04X}, got {received_crc:04X}")
+            error_msg = f"CRC verification failed: expected 0x{calculated_crc:04X}, got 0x{received_crc:04X}"
+            self.debug_logger.log_command(description, full_command, response, error_msg, duration)
+            raise Exception(error_msg)
+        
+        # Log successful transaction
+        self.debug_logger.log_command(description, full_command, response, None, duration)
         
         return response
     
     def _read_raw_status(self) -> bytes:
         """Read raw status response from device"""
-        command = struct.pack('BBHH', self.slave_addr, 0x03, 0x0000, 0x0008)
-        response = self._send_command(command)
+        command = struct.pack('BBHH', self.slave_addr, 0x03, 0x0000, 0x0800)
+        response = self._send_command(command, "Read Status")
         
         if len(response) < 21:
-            raise Exception(f"Invalid response length: expected 21, got {len(response)}")
+            error_msg = f"Invalid status response length: expected 21, got {len(response)}"
+            self.debug_logger.error(error_msg)
+            raise Exception(error_msg)
+
         
         return response
     
@@ -313,6 +539,7 @@ class WanptekPowerSupply:
         Returns:
             dict: Complete status with all measurements and flags
         """
+        self.debug_logger.info("Reading device status")
         response = self._read_raw_status()
         data = response[3:19]
         
@@ -324,6 +551,8 @@ class WanptekPowerSupply:
         is_big_endian = bool(status_byte & 0x08)
         constant_current = bool(status_byte & 0x10)
         alarm_active = bool(status_byte & 0x20)
+        
+        self.debug_logger.debug(f"Status byte 0x{status_byte:02X}: power={power_on}, OCP={ocp_enabled}, lock={keyboard_locked}, CC={constant_current}, alarm={alarm_active}")
         
         # Parse measurement values
         real_voltage_raw = self._unpack_word(data[4:6])
@@ -363,6 +592,8 @@ class WanptekPowerSupply:
             'set_power': (set_voltage_raw / voltage_divisor) * (set_current_raw / current_divisor)
         }
         
+        self.debug_logger.debug(f"Parsed status: V={status_dict['real_voltage']:.2f}V, I={status_dict['real_current']:.3f}A, P={status_dict['real_power']:.2f}W")
+        
         self.last_status = status_dict
         return status_dict
     
@@ -370,18 +601,10 @@ class WanptekPowerSupply:
                    power_on: Optional[bool] = None, ocp_enable: Optional[bool] = None, 
                    keyboard_lock: Optional[bool] = None) -> bool:
         """
-        Universal output control method.
-        
-        Args:
-            voltage: Target voltage in volts (None = keep current setting)
-            current: Target current in amps (None = keep current setting)
-            power_on: Enable power output (None = keep current setting)
-            ocp_enable: Enable over-current protection (None = keep current setting)
-            keyboard_lock: Lock device keyboard (None = keep current setting)
-            
-        Returns:
-            bool: True if successful
+        Universal output control method with enhanced logging.
         """
+        self.debug_logger.info(f"Setting output: V={voltage}, I={current}, power={power_on}, OCP={ocp_enable}, lock={keyboard_lock}")
+        
         # Get current settings for any unspecified parameters
         current_status = self.read_status()
         
@@ -392,13 +615,21 @@ class WanptekPowerSupply:
         target_ocp = ocp_enable if ocp_enable is not None else current_status['ocp_enabled']
         target_lock = keyboard_lock if keyboard_lock is not None else current_status['keyboard_locked']
         
+        self.debug_logger.debug(f"Final target values: V={target_voltage}, I={target_current}, power={target_power}, OCP={target_ocp}, lock={target_lock}")
+        
         # Validate ranges
         if target_voltage > self.max_voltage:
-            raise ValueError(f"Voltage {target_voltage}V exceeds maximum {self.max_voltage}V")
+            error_msg = f"Voltage {target_voltage}V exceeds maximum {self.max_voltage}V"
+            self.debug_logger.error(error_msg)
+            raise ValueError(error_msg)
         if target_current > self.max_current:
-            raise ValueError(f"Current {target_current}A exceeds maximum {self.max_current}A")
+            error_msg = f"Current {target_current}A exceeds maximum {self.max_current}A"
+            self.debug_logger.error(error_msg)
+            raise ValueError(error_msg)
         if target_voltage < 0 or target_current < 0:
-            raise ValueError("Voltage and current must be non-negative")
+            error_msg = "Voltage and current must be non-negative"
+            self.debug_logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Convert to raw values
         voltage_divisor = 10 ** self.voltage_decimal_places
@@ -406,6 +637,8 @@ class WanptekPowerSupply:
         
         voltage_raw = int(target_voltage * voltage_divisor)
         current_raw = int(target_current * current_divisor)
+        
+        self.debug_logger.debug(f"Raw values: voltage={voltage_raw}, current={current_raw}")
         
         # Build control byte
         control_byte = 0
@@ -416,8 +649,10 @@ class WanptekPowerSupply:
         if target_lock:
             control_byte |= 0x04
         
+        self.debug_logger.debug(f"Control byte: 0x{control_byte:02X}")
+        
         # Build write command
-        command = struct.pack('BBHHB', self.slave_addr, 0x10, 0x0000, 0x0003, 0x06)
+        command = struct.pack('BBHHB', self.slave_addr, 0x10, 0x0000, 0x0300, 0x06)
         
         # Add data: control_byte + reserve + voltage + current
         data = struct.pack('BB', control_byte, 0x00)  # Control + Reserve
@@ -427,9 +662,12 @@ class WanptekPowerSupply:
         full_command = command + data
         
         try:
-            response = self._send_command(full_command)
-            return len(response) >= 8
+            response = self._send_command(full_command, "Set Output")
+            success = len(response) >= 8
+            self.debug_logger.info(f"Set output {'successful' if success else 'failed'}")
+            return success
         except Exception as e:
+            self.debug_logger.error(f"Set output failed: {e}")
             print(f"❌ Set output failed: {e}")
             return False
     
@@ -509,7 +747,9 @@ class WanptekPowerSupply:
             'slave_address': self.slave_addr,
             'connected': self.connected,
             'port': self.serial.port if self.serial else None,
-            'baudrate': self.serial.baudrate if self.serial else None
+            'baudrate': self.serial.baudrate if self.serial else None,
+            'debug_enabled': self.debug_logger.enabled,
+            'debug_log_file': self.debug_logger.log_file if self.debug_logger.enabled else None
         }
     
     def print_status(self):
@@ -524,16 +764,22 @@ class WanptekPowerSupply:
         print(f"   Keyboard: {'🔒 Locked' if status['keyboard_locked'] else '🔓 Unlocked'}")
         if status['alarm_active']:
             print(f"   ⚠️  ALARM ACTIVE")
+        
+        if self.debug_logger.enabled:
+            print(f"   🐛 Debug: ON (log: {self.debug_logger.log_file})")
     
     def reconnect(self) -> bool:
         """Attempt to reconnect to the device"""
         if self.serial and hasattr(self.serial, 'port') and hasattr(self.serial, 'baudrate'):
+            self.debug_logger.info(f"Attempting to reconnect to {self.serial.port}")
             return self._connect(self.serial.port, self.serial.baudrate)
         else:
+            self.debug_logger.error("Cannot reconnect: no previous connection info")
             return False
     
     def close(self):
         """Close the serial connection"""
+        self.debug_logger.info("Closing connection")
         if self.serial and self.serial.is_open:
             self.serial.close()
         self.connected = False
@@ -547,7 +793,7 @@ class WanptekPowerSupply:
 
 # Advanced usage examples and utilities
 class WanptekMonitor:
-    """Continuous monitoring utility for WANPTEK power supplies"""
+    """Continuous monitoring utility for WANPTEK power supplies with debug support"""
     
     def __init__(self, psu: WanptekPowerSupply, interval: float = 1.0):
         self.psu = psu
@@ -557,36 +803,92 @@ class WanptekMonitor:
     def start_monitoring(self, callback=None):
         """Start continuous monitoring"""
         self.monitoring = True
+        self.psu.debug_logger.info(f"Starting monitoring every {self.interval}s")
         print(f"🔄 Starting monitoring every {self.interval}s (Ctrl+C to stop)")
         
         try:
             while self.monitoring:
+                start_time = time.time()
                 status = self.psu.read_status()
+                read_time = time.time() - start_time
                 
                 if callback:
                     callback(status)
                 else:
                     # Default display
-                    print(f"\r{status['real_voltage']:.2f}V {status['real_current']:.3f}A {status['real_power']:.2f}W {'ON' if status['power_on'] else 'OFF'}", end='', flush=True)
+                    print(f"\r{status['real_voltage']:.2f}V {status['real_current']:.3f}A {status['real_power']:.2f}W {'ON' if status['power_on'] else 'OFF'} ({read_time:.3f}s)", end='', flush=True)
                 
-                time.sleep(self.interval)
+                time.sleep(max(0, self.interval - read_time))
                 
         except KeyboardInterrupt:
             self.monitoring = False
+            self.psu.debug_logger.info("Monitoring stopped by user")
             print("\n⏹️  Monitoring stopped")
 
 
-# Example usage and testing
+# Debug test functions
+def test_communication_detailed(psu: WanptekPowerSupply):
+    """Perform detailed communication tests with full debug output"""
+    print("\n🧪 Running detailed communication tests...")
+    psu.debug_logger.info("=== STARTING DETAILED COMMUNICATION TESTS ===")
+    
+    # Test 1: Basic status read
+    print("Test 1: Reading status...")
+    try:
+        status = psu.read_status()
+        print(f"✅ Status read successful: {status['real_voltage']:.2f}V, {status['real_current']:.3f}A")
+    except Exception as e:
+        print(f"❌ Status read failed: {e}")
+    
+    # Test 2: Set voltage
+    print("Test 2: Setting voltage to 5.0V...")
+    try:
+        result = psu.set_voltage(5.0)
+        print(f"✅ Voltage set {'successful' if result else 'failed'}")
+    except Exception as e:
+        print(f"❌ Voltage set failed: {e}")
+    
+    # Test 3: Power control
+    print("Test 3: Power on/off...")
+    try:
+        psu.power_off()
+        time.sleep(0.5)
+        psu.power_on()
+        print("✅ Power control successful")
+    except Exception as e:
+        print(f"❌ Power control failed: {e}")
+    
+    # Test 4: Multiple rapid reads
+    print("Test 4: Rapid status reads...")
+    try:
+        for i in range(5):
+            status = psu.read_status()
+            print(f"  Read {i+1}: {status['real_voltage']:.2f}V")
+            time.sleep(0.1)
+        print("✅ Rapid reads successful")
+    except Exception as e:
+        print(f"❌ Rapid reads failed: {e}")
+    
+    psu.debug_logger.info("=== DETAILED COMMUNICATION TESTS COMPLETED ===")
+
+
+# Example usage and testing with debug features
 if __name__ == "__main__":
-    print("🔌 WANPTEK Universal Power Supply Controller")
-    print("=" * 50)
+    print("🔌 WANPTEK Universal Power Supply Controller with Debug Logging")
+    print("=" * 60)
     
     try:
-        # Auto-detect and connect (preferred method for Linux)
-        with WanptekPowerSupply(port='/dev/ttyUSB0', auto_detect=True) as psu:
+        # Initialize with debug enabled
+        print("Initializing with debug logging enabled...")
+        with WanptekPowerSupply(port='/dev/ttyUSB0', auto_detect=True, debug=True) as psu:
+            
+            print(f"\n📄 Debug log file: {psu.debug_logger.log_file}")
             
             # Display device information  
             psu.print_status()
+            
+            # Run detailed tests
+            test_communication_detailed(psu)
             
             # Test basic operations
             print(f"\n🧪 Testing basic operations...")
@@ -619,6 +921,7 @@ if __name__ == "__main__":
             psu.power_off()
             
             print("✅ All tests completed successfully!")
+            print(f"\n📄 Complete debug log saved to: {psu.debug_logger.log_file}")
             
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -627,3 +930,4 @@ if __name__ == "__main__":
         print("   - Verify device address (default: 0)")
         print("   - Try different baudrates: 9600, 4800, 19200, 2400")
         print("   - Check USB cable and connections")
+        print("   - Review debug log for detailed communication traces")
