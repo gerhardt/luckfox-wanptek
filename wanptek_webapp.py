@@ -139,8 +139,6 @@ class SCPICommandProcessor:
                     handler = cmd_handler
                     break
             
-            print("handler:")
-            print(str(handler))
             if handler:
                 if param is not None:
                     return handler(param)
@@ -480,14 +478,17 @@ def get_status():
     try:
         with psu_lock:
             if psu and psu.connected:
-                status = psu.read_status()
-                device_info = psu.get_device_info()
-                return jsonify({
+                status = psu.read_status()   # always a fresh read for the status endpoint
+                device_info = psu.get_device_info()  # in-memory, cheap
+                resp = jsonify({
                     'success': True,
                     'status': status,
                     'device_info': device_info,
                     'timestamp': datetime.now().isoformat()
                 })
+                # Tell browser not to cache this
+                resp.headers['Cache-Control'] = 'no-store'
+                return resp
             else:
                 return jsonify({
                     'success': False,
@@ -537,11 +538,16 @@ def set_output():
             )
             
             if success:
-                # Return updated status
-                status = psu.read_status()
+                # After a successful write the PSU needs a moment to settle
+                # before a read reflects the new state. Rather than burning
+                # another serial round-trip immediately (which also blocks the
+                # lock), we invalidate the cache and return the intended values
+                # derived from the request; the next /api/status or SSE tick
+                # will return the freshly measured values.
+                psu._status_cache_time = 0.0   # force next read to go to hardware
                 return jsonify({
                     'success': True,
-                    'status': status
+                    'status': psu.last_status   # best available; client will re-poll
                 })
             else:
                 return jsonify({
@@ -576,9 +582,11 @@ def power_control(action):
                     'error': 'Invalid action'
                 })
             
+            if success:
+                psu._status_cache_time = 0.0   # invalidate cache; next poll reads fresh
             return jsonify({
                 'success': success,
-                'status': psu.read_status() if success else None
+                'status': psu.last_status if success else None
             })
             
     except Exception as e:
@@ -593,6 +601,9 @@ def stream_data():
     def generate():
         while True:
             try:
+                # Acquire lock only for the actual serial read, then release
+                # before sleeping so that /api/set_output is never blocked by
+                # the background poller for the full 500 ms interval.
                 with psu_lock:
                     if psu and psu.connected:
                         status = psu.read_status()
@@ -604,17 +615,17 @@ def stream_data():
                             'constant_current': status['constant_current_mode'],
                             'timestamp': datetime.now().isoformat()
                         }
-                        yield f"data: {json.dumps(data)}\n\n"
                     else:
-                        yield f"data: {json.dumps({'error': 'Not connected'})}\n\n"
-                        
-                time.sleep(0.5)  # Update every 500ms
-                
+                        data = {'error': 'Not connected'}
+
+                yield f"data: {json.dumps(data)}\n\n"
+                time.sleep(0.5)  # sleep outside the lock
+
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 time.sleep(1)
     
-    return Response(generate(), mimetype='text/plain')
+    return Response(generate(), mimetype='text/event-stream')
 
 
 # Create templates directory and save the HTML template
