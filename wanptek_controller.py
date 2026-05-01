@@ -239,8 +239,8 @@ class WanptekPowerSupply:
         # Connection status
         self.connected = False
         self.last_status = {}
-        self._status_cache_time = 0.0   # epoch time of last successful read_status()
-        self.STATUS_CACHE_TTL = 0.15    # seconds: cached status is valid for 150 ms
+        self._status_cache_time = 0.0   # epoch of last read_status()
+        self.STATUS_CACHE_TTL = 0.15    # 150 ms cache
         
         self.debug_logger.info(f"Initializing WANPTEK controller (slave_addr={slave_addr}, timeout={timeout}s)")
         
@@ -331,7 +331,7 @@ class WanptekPowerSupply:
                 parity=serial.PARITY_NONE,
                 stopbits=1,
                 timeout=self.timeout,
-                inter_byte_timeout=0.05  # unblock read() 50 ms after last byte
+                inter_byte_timeout=0.05  # unblock read() 50ms after last byte
             )
             
             self.debug_logger.debug(f"Serial port opened: {self.serial}")
@@ -471,10 +471,7 @@ class WanptekPowerSupply:
         self.serial.write(full_command)
         self.serial.flush()
         
-        # Read response with timeout handling.
-        # We rely on the serial port's own read() timeout (set in _connect
-        # via inter_byte_timeout) rather than a busy-poll sleep, which was
-        # introducing unnecessary latency at low baudrates.
+        # Read response with timeout handling
         response = b''
         read_start = time.time()
         bytes_expected = None
@@ -484,24 +481,17 @@ class WanptekPowerSupply:
             if chunk:
                 response += chunk
                 self.debug_logger.debug(f"Received {len(chunk)} bytes: {chunk.hex().upper()}")
-                
-                # Try to determine expected response length
                 if len(response) >= 3 and bytes_expected is None:
                     func_code = response[1]
-                    if func_code == 0x03:  # Read response
-                        data_bytes = response[2]
-                        bytes_expected = 3 + data_bytes + 2  # addr+func+len+data+crc
-                        self.debug_logger.debug(f"Expected response length: {bytes_expected} bytes")
-                    elif func_code == 0x10:  # Write response
-                        bytes_expected = 8  # Fixed length for write response
-                        self.debug_logger.debug(f"Expected response length: {bytes_expected} bytes")
-                
-                # Stop as soon as we have a complete frame
+                    if func_code == 0x03:
+                        bytes_expected = 3 + response[2] + 2
+                    elif func_code == 0x10:
+                        bytes_expected = 8
                 if bytes_expected and len(response) >= bytes_expected:
                     break
-            elif len(response) >= 3 and bytes_expected and len(response) >= bytes_expected:
+            elif bytes_expected and len(response) >= bytes_expected:
                 break
-            # No sleep here: serial.read() already blocks for inter_byte_timeout
+            # No sleep: inter_byte_timeout handles blocking
         
         duration = time.time() - start_time
         
@@ -605,14 +595,8 @@ class WanptekPowerSupply:
         return status_dict
 
     def read_status_cached(self) -> Dict:
-        """Return cached status if fresh enough, otherwise read from device.
-
-        Use this inside set_output() and convenience wrappers so that
-        back-to-back calls (e.g. set_voltage followed immediately by a
-        status poll) do not each generate a full Modbus round-trip.
-        """
+        """Return cached status if fresh, else read from device."""
         if self.last_status and (time.time() - self._status_cache_time) < self.STATUS_CACHE_TTL:
-            self.debug_logger.debug("Returning cached status")
             return self.last_status
         return self.read_status()
     
@@ -624,10 +608,7 @@ class WanptekPowerSupply:
         """
         self.debug_logger.info(f"Setting output: V={voltage}, I={current}, power={power_on}, OCP={ocp_enable}, lock={keyboard_lock}")
         
-        # Get current settings for any unspecified parameters.
-        # Use the cache to avoid a full round-trip when the caller only
-        # wants to change one field (e.g. power_on) and we already have
-        # a fresh reading from the preceding poll.
+        # Use cache to avoid a round-trip when only one field changes
         current_status = self.read_status_cached()
         
         # Use provided values or fall back to current settings
@@ -726,7 +707,7 @@ class WanptekPowerSupply:
         """Unlock device keyboard"""
         return self.set_output(keyboard_lock=False)
     
-    # Quick read methods — use cached status to avoid redundant round-trips
+    # Quick read methods
     def read_voltage(self) -> float:
         """Read actual output voltage"""
         return self.read_status_cached()['real_voltage']

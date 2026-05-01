@@ -478,15 +478,14 @@ def get_status():
     try:
         with psu_lock:
             if psu and psu.connected:
-                status = psu.read_status()   # always a fresh read for the status endpoint
-                device_info = psu.get_device_info()  # in-memory, cheap
+                status = psu.read_status()
+                device_info = psu.get_device_info()
                 resp = jsonify({
                     'success': True,
                     'status': status,
                     'device_info': device_info,
                     'timestamp': datetime.now().isoformat()
                 })
-                # Tell browser not to cache this
                 resp.headers['Cache-Control'] = 'no-store'
                 return resp
             else:
@@ -538,16 +537,10 @@ def set_output():
             )
             
             if success:
-                # After a successful write the PSU needs a moment to settle
-                # before a read reflects the new state. Rather than burning
-                # another serial round-trip immediately (which also blocks the
-                # lock), we invalidate the cache and return the intended values
-                # derived from the request; the next /api/status or SSE tick
-                # will return the freshly measured values.
-                psu._status_cache_time = 0.0   # force next read to go to hardware
+                psu._status_cache_time = 0.0  # invalidate; next poll reads fresh
                 return jsonify({
                     'success': True,
-                    'status': psu.last_status   # best available; client will re-poll
+                    'status': psu.last_status
                 })
             else:
                 return jsonify({
@@ -583,7 +576,7 @@ def power_control(action):
                 })
             
             if success:
-                psu._status_cache_time = 0.0   # invalidate cache; next poll reads fresh
+                psu._status_cache_time = 0.0
             return jsonify({
                 'success': success,
                 'status': psu.last_status if success else None
@@ -601,9 +594,6 @@ def stream_data():
     def generate():
         while True:
             try:
-                # Acquire lock only for the actual serial read, then release
-                # before sleeping so that /api/set_output is never blocked by
-                # the background poller for the full 500 ms interval.
                 with psu_lock:
                     if psu and psu.connected:
                         status = psu.read_status()
@@ -617,10 +607,9 @@ def stream_data():
                         }
                     else:
                         data = {'error': 'Not connected'}
-
+                # lock released before sleep — set_output never blocked
                 yield f"data: {json.dumps(data)}\n\n"
-                time.sleep(0.5)  # sleep outside the lock
-
+                time.sleep(0.5)
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 time.sleep(1)
@@ -631,18 +620,59 @@ def stream_data():
 # Create templates directory and save the HTML template
 import os
 
-def initialize_power_supply():
-    """Initialize the power supply connection"""
+@app.route('/api/reconnect', methods=['POST'])
+def reconnect():
+    """Attempt to (re-)connect to the power supply and restart SCPI server"""
     global psu
     try:
-        print("🔍 Initializing WANPTEK power supply...")
-        psu = WanptekPowerSupply(port="/dev/ttyS1",debug=False)
-        print("✅ Power supply initialized successfully")
-        return True
+        with psu_lock:
+            if psu:
+                try:
+                    psu.close()
+                except Exception:
+                    pass
+                psu = None
+            success = initialize_power_supply()
+            if success and psu:
+                scpi_server = SCPIServer(psu, port=5050)
+                scpi_thread = threading.Thread(target=scpi_server.start)
+                scpi_thread.daemon = True
+                scpi_thread.start()
+                return jsonify({'success': True,
+                                'message': f'Connected: {psu.device_model}',
+                                'device_info': psu.get_device_info()})
+            else:
+                return jsonify({'success': False,
+                                'error': 'Could not connect on /dev/ttyS1'})
     except Exception as e:
-        print(f"❌ Failed to initialize power supply: {e}")
-        print("💡 Make sure the device is connected and try again")
-        return False
+        return jsonify({'success': False, 'error': str(e)})
+
+
+def initialize_power_supply():
+    """Initialize the power supply.
+
+    Tries each supported baudrate with a short timeout so startup is fast.
+    auto_detect=False keeps us strictly on /dev/ttyS1.
+    """
+    global psu
+    for baudrate in [9600, 4800, 19200, 2400]:
+        try:
+            print(f"🔍 Trying /dev/ttyS1 at {baudrate} baud ...")
+            candidate = WanptekPowerSupply(
+                port="/dev/ttyS1",
+                baudrate=baudrate,
+                auto_detect=False,
+                timeout=0.5,
+                debug=False
+            )
+            psu = candidate
+            print(f"✅ Power supply connected at {baudrate} baud")
+            return True
+        except Exception as e:
+            print(f"   ✗ {baudrate} baud: {e}")
+    print("❌ Could not connect on /dev/ttyS1")
+    print("💡 Check cable and verify:  ls -l /dev/ttyS1")
+    return False
 
 def main():
     """Main application entry point"""
