@@ -151,38 +151,70 @@ class SCPICommandProcessor:
             return f"ERROR: {str(e)}"
     
     def _normalize_command(self, command):
-        """Normalize SCPI command format"""
-        # Convert to uppercase and expand abbreviated forms
-        command = command.upper()
-        
-        # Handle common abbreviations
-        abbreviations = {
-            'SOUR': 'SOURce',
-            'VOLT': 'VOLTage',
-            'CURR': 'CURRent',
-            'MEAS': 'MEASure',
-            'OUTP': 'OUTPut',
-            'STAT': 'STATe',
-            'PROT': 'PROTection',
-            'SYST': 'SYSTem',
-            'QUES': 'QUEStionable',
-            'OPER': 'OPERation',
-            'COND': 'CONDition',
-            'IMME': 'IMMediate',
-            'AMPL': 'AMPLitude',
-            'LEVE': 'LEVel',
-            'TRIP': 'TRIPped'
+        """Normalize SCPI command format.
+
+        Splits the command into its verb and (optional) parameter, then
+        expands each colon-separated component of the verb independently.
+        This avoids the double-expansion bug where e.g. 'VOLTage' would be
+        turned into 'VOLTageAGE' by a blind str.replace('VOLT', 'VOLTage').
+        """
+        command = command.strip().upper()
+
+        # Separate verb from parameter (first space separates them)
+        if ' ' in command:
+            verb, param = command.split(' ', 1)
+        else:
+            verb, param = command, None
+
+        # Map: uppercase short form → canonical mixed-case long form.
+        # Keys must be the UPPERCASE short forms that users type;
+        # values are the canonical forms used as dict keys in self.commands.
+        # Expansion is done component-by-component (split on ':') so that
+        # already-long words like 'VOLTAGE' are left alone.
+        abbrev_map = {
+            'VOLT':  'VOLTage',
+            'CURR':  'CURRent',
+            'MEAS':  'MEASure',
+            'OUTP':  'OUTPut',
+            'SOUR':  'SOURce',
+            'STAT':  'STATe',
+            'PROT':  'PROTection',
+            'SYST':  'SYSTem',
+            'QUES':  'QUEStionable',
+            'OPER':  'OPERation',
+            'COND':  'CONDition',
+            'IMME':  'IMMediate',
+            'AMPL':  'AMPLitude',
+            'LEVE':  'LEVel',
+            'TRIP':  'TRIPped',
+            'POW':   'POWer',
         }
-        
-        for abbrev, full in abbreviations.items():
-            command = command.replace(abbrev, full)
-        
-        return command
+
+        def expand_token(token):
+            """Expand one colon-separated component.
+
+            Strip a trailing '?' before lookup, then re-attach it.
+            This handles e.g. 'VOLT?' → 'VOLTage?'.
+            """
+            query = token.endswith('?')
+            base = token[:-1] if query else token
+            expanded = abbrev_map.get(base, base)   # exact match only
+            return expanded + ('?' if query else '')
+
+        # Expand each component of the verb
+        components = verb.split(':')
+        expanded_components = [expand_token(c) for c in components]
+        expanded_verb = ':'.join(expanded_components)
+
+        # Reconstruct: verb only (param handled by caller)
+        if param is not None:
+            return expanded_verb + ' ' + param
+        return expanded_verb
     
     def _match_command(self, input_cmd, pattern_cmd):
         """Match input command against command pattern"""
         # Simple exact match for now
-        return input_cmd == pattern_cmd.upper()
+        return input_cmd.upper() == pattern_cmd.upper()
     
     # System Commands
     def get_identification(self):
@@ -537,7 +569,6 @@ def set_output():
             )
             
             if success:
-                psu._status_cache_time = 0.0  # invalidate; next poll reads fresh
                 return jsonify({
                     'success': True,
                     'status': psu.last_status
@@ -575,8 +606,6 @@ def power_control(action):
                     'error': 'Invalid action'
                 })
             
-            if success:
-                psu._status_cache_time = 0.0
             return jsonify({
                 'success': success,
                 'status': psu.last_status if success else None
@@ -633,7 +662,7 @@ def reconnect():
                     pass
                 psu = None
             success = initialize_power_supply()
-            if success and psu:
+            if success and psu and psu.connected:
                 scpi_server = SCPIServer(psu, port=5050)
                 scpi_thread = threading.Thread(target=scpi_server.start)
                 scpi_thread.daemon = True
@@ -649,30 +678,27 @@ def reconnect():
 
 
 def initialize_power_supply():
-    """Initialize the power supply.
+    """Initialize the power supply connection.
 
-    Tries each supported baudrate with a short timeout so startup is fast.
-    auto_detect=False keeps us strictly on /dev/ttyS1.
+    Uses auto_detect=True so _auto_connect() raises on failure (which we catch).
+    We pass preferred_port so it never scans ports other than /dev/ttyS1.
+    timeout=0.5 keeps each baudrate attempt short (4 × 0.5 s worst case).
     """
     global psu
-    for baudrate in [9600, 4800, 19200, 2400]:
-        try:
-            print(f"🔍 Trying /dev/ttyS1 at {baudrate} baud ...")
-            candidate = WanptekPowerSupply(
-                port="/dev/ttyS1",
-                baudrate=baudrate,
-                auto_detect=False,
-                timeout=0.5,
-                debug=False
-            )
-            psu = candidate
-            print(f"✅ Power supply connected at {baudrate} baud")
-            return True
-        except Exception as e:
-            print(f"   ✗ {baudrate} baud: {e}")
-    print("❌ Could not connect on /dev/ttyS1")
-    print("💡 Check cable and verify:  ls -l /dev/ttyS1")
-    return False
+    try:
+        print("🔍 Initializing WANPTEK power supply on /dev/ttyS1 ...")
+        psu = WanptekPowerSupply(
+            port="/dev/ttyS1",
+            auto_detect=True,
+            timeout=0.5,
+            debug=False
+        )
+        print(f"✅ Power supply initialized: {psu.device_model}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to initialize power supply: {e}")
+        print("💡 Check cable and verify:  ls -l /dev/ttyS1")
+        return False
 
 def main():
     """Main application entry point"""

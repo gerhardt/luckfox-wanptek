@@ -668,6 +668,18 @@ class WanptekPowerSupply:
             response = self._send_command(full_command, "Set Output")
             success = len(response) >= 8
             self.debug_logger.info(f"Set output {'successful' if success else 'failed'}")
+            if success and self.last_status:
+                # Optimistically update last_status so callers immediately see
+                # the commanded state without waiting for the next hardware read.
+                # The SSE poller will overwrite this with a real measurement shortly.
+                self.last_status = dict(self.last_status)   # shallow copy
+                self.last_status['power_on']   = target_power
+                self.last_status['ocp_enabled'] = target_ocp
+                self.last_status['keyboard_locked'] = target_lock
+                self.last_status['set_voltage'] = target_voltage
+                self.last_status['set_current'] = target_current
+                # Invalidate cache so next read goes to hardware
+                self._status_cache_time = 0.0
             return success
         except Exception as e:
             self.debug_logger.error(f"Set output failed: {e}")
