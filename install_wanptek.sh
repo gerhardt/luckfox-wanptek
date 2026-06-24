@@ -415,7 +415,7 @@ echo -e "${GREEN}  ${MODE} complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 [[ -n "${ETH_MAC}" ]] && echo "  eth0 MAC addr  : ${ETH_MAC}  (applied after disconnect)"
 echo "  Web interface : http://${REMOTE_HOST}  (IP may change — check DHCP)"
-echo "  SCPI server   : telnet <new-IP> 5050"
+echo "  SCPI server   : telnet <new-IP> 5025"
 echo "  Live log      : ssh ${REMOTE_USER}@<new-IP> tail -f ${LOG_FILE}"
 echo "  Log resets on reboot (RAM) — autostart in /etc/rc.local"
 echo

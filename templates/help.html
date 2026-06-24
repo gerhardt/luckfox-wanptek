@@ -52,20 +52,20 @@
                 
                 <h3>Connection Information</h3>
                 <p>
-                    The SCPI server is accessible via TCP/IP on port <strong>5050</strong>. You can connect using 
+                    The SCPI server is accessible via TCP/IP on port <strong>5025</strong>. You can connect using 
                     telnet, socket programming, or any SCPI-compatible library.
                 </p>
                 <div style="background: rgba(0, 0, 0, 0.5); padding: 15px; border-radius: 8px; margin: 15px 0;">
                     <strong>Connection Details:</strong><br>
                     IP Address: <code>{{ ipa }}</code><br>
-                    Port: <code>5050</code><br>
+                    Port: <code>5025</code><br>
                     Protocol: <code>TCP/IP</code>
                 </div>
 
                 <h3>Testing the Connection</h3>
                 <p>You can test the SCPI interface using telnet from your terminal:</p>
                 <pre><code># Connect via telnet
-telnet {{ ipa }} 5050
+telnet {{ ipa }} 5025
 
 # Once connected, try these commands:
 *IDN?                    # Get device identification
@@ -91,13 +91,13 @@ import time
 class WanptekSCPI:
     """Simple SCPI interface for WANPTEK power supply"""
     
-    def __init__(self, host='{{ ipa }}', port=5050, timeout=2.0):
+    def __init__(self, host='{{ ipa }}', port=5025, timeout=2.0):
         """
         Initialize connection to power supply
         
         Args:
             host: IP address of the power supply
-            port: SCPI server port (default: 5050)
+            port: SCPI server port (default: 5025)
             timeout: Socket timeout in seconds
         """
         self.host = host

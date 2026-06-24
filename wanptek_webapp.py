@@ -4,14 +4,14 @@ WANPTEK Power Supply Web Application with SCPI Server
 
 This application provides:
 1. Web interface on port 80 (Flask)
-2. SCPI command server on port 5050 (Socket server)
+2. SCPI command server on port 5025 (Socket server)
 3. Real-time monitoring and control
 
 Usage:
     python wanptek_webapp.py
 
 Web Interface: http://localhost
-SCPI Interface: telnet localhost 5050
+SCPI Interface: telnet localhost 5025
 """
 
 import json
@@ -389,9 +389,9 @@ class SCPICommandProcessor:
 
 
 class SCPIServer:
-    """SCPI server that listens on port 5050"""
+    """SCPI server that listens on port 5025"""
     
-    def __init__(self, power_supply, port=5050):
+    def __init__(self, power_supply, port=5025):
         self.psu = power_supply
         self.port = port
         self.server_socket = None
@@ -663,7 +663,7 @@ def reconnect():
                 psu = None
             success = initialize_power_supply()
             if success and psu and psu.connected:
-                scpi_server = SCPIServer(psu, port=5050)
+                scpi_server = SCPIServer(psu, port=5025)
                 scpi_thread = threading.Thread(target=scpi_server.start)
                 scpi_thread.daemon = True
                 scpi_thread.start()
@@ -712,7 +712,7 @@ def main():
     
     # Start SCPI server in background thread
     if psu:
-        scpi_server = SCPIServer(psu, port=5050)
+        scpi_server = SCPIServer(psu, port=5025)
         scpi_thread = threading.Thread(target=scpi_server.start)
         scpi_thread.daemon = True
         scpi_thread.start()
@@ -721,10 +721,10 @@ def main():
     
     # Start Flask web server
     print("🌐 Starting web server on port 80...")
-    print("📡 SCPI server available on port 5050")
+    print("📡 SCPI server available on port 5025")
     print("\n🔗 Access points:")
     print("   Web Interface: http://localhost")
-    print("   SCPI Interface: telnet localhost 5050")
+    print("   SCPI Interface: telnet localhost 5025")
     print("\n💡 SCPI Commands (Rigol DP800 compatible):")
     print("   *IDN?                    - Get device identification")
     print("   VOLT 5.0                 - Set voltage to 5V")
